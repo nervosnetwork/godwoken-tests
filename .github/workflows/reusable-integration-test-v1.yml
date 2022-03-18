@@ -36,6 +36,41 @@ on:
         description: 'Log level'
         required: false
         default: 'INFO'
+  workflow_dispatch:
+    inputs:
+      kicker_ref:
+        type: string
+        description: 'The reference of https://github.com/RetricSu/godwoken-kicker.git'
+        required: false
+      gw_prebuild_image_name:
+        description: 'The prebuild image name, e.g. nervos/godwoken-prebuilds or ghcr.io/flouse/godwoken-prebuilds'
+        required: false
+        type: string
+      gw_prebuild_image_tag:
+        description: 'The prebuilt image tag'
+        required: false
+        type: string
+      godwoken_ref:
+        description: 'The reference of https://github.com/nervosnetwork/godwoken.git'
+        required: false
+        type: string
+      gw_scripts_ref:
+        description: 'The reference of https://github.com/nervosnetwork/godwoken-scripts.git'
+        required: false
+        type: string
+      polyjuice_ref:
+        description: 'The reference of https://github.com/nervosnetwork/godwoken-polyjuice.git'
+        required: false
+        type: string
+      web3_ref:
+        description: 'The reference of https://github.com/nervosnetwork/godwoken-web3.git'
+        required: false
+        type: string
+      log-level:
+        type: string
+        description: 'Log level'
+        required: false
+        default: 'INFO'
   push:
     branches:
     - 'v1'
