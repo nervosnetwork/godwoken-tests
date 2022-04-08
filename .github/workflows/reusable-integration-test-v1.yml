@@ -200,6 +200,13 @@ jobs:
       # FIXME: Sometimes, Godwoken service is not running
       # https://github.com/Flouse/godwoken/runs/3639382192?check_suite_focus=true#step:8:667
 
+    - name: Display kicker logs when failed
+      if: failure()
+      working-directory: kicker
+      run: |
+        ./kicker ps
+        ./kicker logs
+
     # - name: Enable offchain validator of Godwoken
     #   working-directory: kicker
     #   if: ${{ false }}
