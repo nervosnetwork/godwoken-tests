@@ -14,3 +14,6 @@
 [submodule "testcases/gw-fee-test"]
 	path = testcases/gw-fee-test
 	url = https://github.com/RetricSu/gw-fee-test.git
+[submodule "testcases/godwoken-scripts-tests"]
+	path = testcases/godwoken-scripts-tests
+	url = https://github.com/classicalliu/godwoken-scripts-tests

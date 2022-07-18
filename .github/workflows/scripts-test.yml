@@ -1,0 +1,45 @@
+name: Scripts-Test 
+
+on:
+  push:
+  schedule:
+  # You can schedule a workflow to run at specific UTC times using POSIX cron syntax (https://pubs.opengroup.org/onlinepubs/9699919799/utilities/crontab.html#tag_20_25_07).
+  # Scheduled workflows run on the latest commit on the default or base branch.
+  # The shortest interval you can run scheduled workflows is once every 5 minutes.
+  # Note: GitHub Actions does not support the non-standard syntax @yearly, @monthly, @weekly, @daily, @hourly, and @reboot.
+  # You can use crontab guru (https://crontab.guru/) to help generate your cron syntax and confirm what time it will run.
+  # To help you get started, there is also a list of crontab guru examples (https://crontab.guru/examples.html).
+  - cron:  '* 1 * * *'
+
+jobs:
+  scripts-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        net: ['alphanet', 'testnet']
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+      with:
+        submodules: 'recursive'
+    - uses: actions/setup-node@v2
+      with:
+        node-version: '16'
+    - name: Get yarn cache directory path
+      id: yarn-cache-dir-path
+      run: echo "::set-output name=dir::$(yarn cache dir)"
+    - name: Node Cache
+      uses: actions/cache@v2
+      id: yarn-cache # use this to check for `cache-hit` (`steps.yarn-cache.outputs.cache-hit != 'true'`)
+      with:
+        path: ${{ steps.yarn-cache-dir-path.outputs.dir }}
+        key: ${{ runner.os }}-yarn-${{ hashFiles('**/yarn.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-yarn-
+
+    - name: Run Test
+      working-directory: testcases/godwoken-scripts-tests
+      run: |
+        yarn
+        yarn start:${{ matrix.net }}
