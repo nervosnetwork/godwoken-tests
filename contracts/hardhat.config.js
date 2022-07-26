@@ -64,6 +64,7 @@ module.exports = {
   },
   solidity: {
     compilers: [
+      {version: "0.5.14"},
       { // for polyjuice contracts
         version: "0.6.6",
         settings: {}
