@@ -13,6 +13,8 @@
   "dependencies": {
     "@ckb-lumos/base": "0.18.0-rc1",
     "@ckb-lumos/common-scripts": "0.18.0-rc1",
+    "@metamask/eth-sig-util": "^4.0.1",
+    "chai": "^4.3.6",
     "ckb-js-toolkit": "0.10.2",
     "keccak256": "^1.0.2",
     "secp256k1": "^4.0.2"

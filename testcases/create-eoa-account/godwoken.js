@@ -48,4 +48,16 @@ export class GodwokenClient {
 	async getTransactionReceipt(txHash) {
 		return await this.rpcCall("gw_get_transaction_receipt", [txHash]);
 	}
+
+	async getScriptHashByRegistryAddress(registryAddress) {
+		return await this.rpcCall("gw_get_script_hash_by_registry_address", [registryAddress]);
+	}
+
+	async getRegistryAddressByScriptHash(scriptHash, registryId) {
+		return await this.rpcCall("gw_get_registry_address_by_script_hash", [scriptHash, registryId]);
+	}
+
+	async getNodeInfo() {
+		return await this.rpcCall("gw_get_node_info", []);
+	}
 }

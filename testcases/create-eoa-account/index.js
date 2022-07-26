@@ -1,12 +1,12 @@
 'use strict';
 import { GodwokenClient } from "./godwoken";
 import { Reader } from "ckb-js-toolkit";
-import pkg from '@ckb-lumos/base';
-const { utils } = pkg;
+import { signTypedData, SignTypedDataVersion } from "@metamask/eth-sig-util";
+import lumos from '@ckb-lumos/base';
+const { utils } = lumos;
 import keccak256 from "keccak256";
 import crypto from "crypto";
-import secp256k1 from 'secp256k1';
-const { ecdsaSign } = secp256k1;
+import { expect } from 'chai';
 import {
 	SerializeMetaContractArgs,
 	SerializeRawL2Transaction,
@@ -14,6 +14,34 @@ import {
 	SerializeETHAddrRegArgs,
 } from "./godwoken-schema";
 
+/**
+ * Some node info we need when we build a transaction.
+ */
+class NodeInfo {
+	constructor(nodeInfoJson) {
+		this.nodeInfoJson = nodeInfoJson;
+	}
+
+	getRollupTyeHash() {
+		return this.nodeInfoJson.rollup_cell.type_hash;
+	}
+
+	getChainId() {
+		return this.nodeInfoJson.rollup_config.chain_id;
+	}
+
+	getEthAccountTypeHash() {
+		return this.nodeInfoJson.eoa_scripts
+			.filter(v => v.eoa_type == 'eth')[0]
+			.type_hash;
+	}
+
+	getEthAddrRegTypeHash() {
+		return this.nodeInfoJson.backends
+			.filter(v => v.backend_type == 'eth_addr_reg')[0]
+			.validator_script_type_hash;
+	}
+}
 
 function normalizeHexNumber(length, value) {
 	if (!(value instanceof ArrayBuffer)) {
@@ -80,6 +108,7 @@ function ethAddrToScriptHash(
 
 function normalizeRawL2Tx(rawL2Tx) {
 	const tx = {
+		chain_id: normalizeHexNumber(8, rawL2Tx.chain_id),
 		from_id: normalizeHexNumber(4, rawL2Tx.from_id),
 		to_id: normalizeHexNumber(4, rawL2Tx.to_id),
 		nonce: normalizeHexNumber(4, rawL2Tx.nonce),
@@ -123,16 +152,20 @@ function createMetaContractArgs(rollupTypeHash, ethAccountTypeHash, ethAddr) {
 	console.log(`eth account type hash: ${ethAccountTypeHash}`);
 	console.log(`eth addr: ${ethAddr}`);
 	const scriptArgs = rollupTypeHash + ethAddr.slice(2).toLowerCase();
+	// const scriptArgs = rollupTypeHash;
 	console.log(`script args: ${scriptArgs}`);
 	const l2Script = {
 		code_hash: new Reader(ethAccountTypeHash),
 		hash_type: 1, //Type
 		args: new Reader(scriptArgs),
 	};
-	const fee = "0x64";
+	const fee = "0x1";
 	const createAccount = {
 		script: l2Script,
-		fee: normalizeHexNumber(8, fee)
+		fee: {
+			registry_id: normalizeHexNumber(4, "0x2"),
+			amount: normalizeHexNumber(16, fee)
+		}
 	};
 
 	// MetaContractArgs
@@ -143,42 +176,76 @@ function createMetaContractArgs(rollupTypeHash, ethAccountTypeHash, ethAddr) {
 
 	return new Reader(SerializeMetaContractArgs(metaContractArgs)).serializeJson();
 }
-
-function generateTxMessage(rawL2Tx, rollupTypeHash, senderScriptHash, receiverScriptHash) {
-	const rawTxHex = serializeRawL2Tx(rawL2Tx);
-	const data =
-		rollupTypeHash +
-		senderScriptHash.slice(2) +
-		receiverScriptHash.slice(2) +
-		rawTxHex.slice(2);
-	const message = new utils.CKBHasher().update(data).digestHex();
-	const prefix = Buffer.from(`\x19Ethereum Signed Message:\n32`);
-	const buf = Buffer.concat([prefix, Buffer.from(message.slice(2), "hex")]);
-	return `0x${keccak256(buf).toString("hex")}`;
+async function convertToTypedL2Tx(fromEthAddr, rawL2Tx, rpc) {
+	const chain_id = Number(rawL2Tx.chain_id);
+	const nonce = Number(rawL2Tx.nonce);
+	const toScriptHash = await rpc.getScriptHashByAccountId(rawL2Tx.to_id);
+	return {
+		chain_id,
+		nonce,
+		from: fromEthAddr,
+		to: toScriptHash,
+		args: rawL2Tx.args
+	};
 }
 
-function signMessage(message, privateKey) {
-	const signObject = ecdsaSign(
-		new Uint8Array(new Reader(message).toArrayBuffer()),
-		new Uint8Array(new Reader(privateKey).toArrayBuffer())
-	);
-	const signatureBuffer = new ArrayBuffer(65);
-	const signatureArray = new Uint8Array(signatureBuffer);
-	signatureArray.set(signObject.signature, 0);
-	let v = signObject.recid;
-	if (v >= 27) {
-		v -= 27;
-	}
-	signatureArray.set([v], 64);
+function bytesToHexString(byteArray) {
+	return Array.from(byteArray, function (byte) {
+		return ('0' + (byte & 0xFF).toString(16)).slice(-2);
+	}).join('');
+}
 
-	const signature = new Reader(signatureBuffer).serializeJson();
+function getEIP712DomainSignature(typedL2Tx, privateKey) {
+	console.log(`typedL2Tx: ${JSON.stringify(typedL2Tx, null, 2)}`);
+	const typedData = {
+		"types": {
+			"EIP712Domain": [
+				{ "name": "name", "type": "string" },
+				{ "name": "version", "type": "string" },
+				{ "name": "chainId", "type": "uint256" },
+			],
+			"RegistryAddress": [
+				{ "name": "registry", "type": "string" },
+				{ "name": "address", "type": "address" }
+			],
+			"L2Transaction": [
+				{ "name": "chainId", "type": "uint256" },
+				{ "name": "from", "type": "RegistryAddress" },
+				{ "name": "to", "type": "bytes32" },
+				{ "name": "nonce", "type": "uint256" },
+				{ "name": "args", "type": "bytes" }
+			]
+		},
+		"primaryType": "L2Transaction",
+		"domain": {
+			"name": "Godwoken",
+			"version": "1",
+			"chainId": typedL2Tx.chain_id,
+		},
+		"message": {
+			"chainId": typedL2Tx.chain_id,
+			"from": {
+				"registry": "ETH",
+				"address": typedL2Tx.from
+			},
+			"to": typedL2Tx.to,
+			"nonce": typedL2Tx.nonce,
+			"args": typedL2Tx.args
+		}
+	};
+	const signature = signTypedData({
+		privateKey: Buffer.from(privateKey.slice(2), 'hex'),
+		data: typedData,
+		version: SignTypedDataVersion.V4
+	});
 	return signature;
 }
 
-async function createEoaAccount(rpc, privateKey, ethAddr, ethAddrRegTypeHash) {
-	//1. create EOA account for ethAddr
-	const rollupTypeHash = await rpc.getRollupTyeHash();
-	const ethAccountTypeHash = await rpc.getEthAccountTypeHash();
+//1. create EOA account for ethAddr
+async function createEoaAccount(rpc, privateKey, ethAddr, nodeInfo) {
+	const rollupTypeHash = nodeInfo.getRollupTyeHash();
+	const ethAccountTypeHash = nodeInfo.getEthAccountTypeHash();
+	const chainId = nodeInfo.getChainId();
 	const fromId = await privateKeyToAccountId(rpc, privateKey, ethAccountTypeHash, rollupTypeHash);
 	console.log(`fromId: ${fromId}`);
 	let nonce = await rpc.getNonce(fromId);
@@ -189,7 +256,7 @@ async function createEoaAccount(rpc, privateKey, ethAddr, ethAddrRegTypeHash) {
 	console.log(`createMetaContractArgs: ${args}`);
 	//The structure of tx means: we want to create a tx that creating 
 	//an EOA account(which type hash is ethAccountTypeHash) with Meta Contract.
-	const createEOATx = await buildTx(rpc, privateKey, fromId, metaContractAccountId, nonce, args, rollupTypeHash);
+	const createEOATx = await buildTx(rpc, privateKey, fromId, metaContractAccountId, nonce, args, chainId);
 	const l2TxHash = await rpc.submitL2Tx(createEOATx);
 	console.log(`l2txHash: ${l2TxHash}`);
 	//We expect to receive a receipt of the tx.
@@ -198,19 +265,32 @@ async function createEoaAccount(rpc, privateKey, ethAddr, ethAddrRegTypeHash) {
 	console.log(`receipt: ${JSON.stringify(receipt, null, 2)}`);
 
 	//Check the EOA account we just created.
-	let newScriptHash = ethAddrToScriptHash(ethAccountTypeHash, rollupTypeHash, ethAddr);
+	const newScriptHash = ethAddrToScriptHash(ethAccountTypeHash, rollupTypeHash, ethAddr);
 	const newAccountId = await rpc.getAccountIdByScriptHash(newScriptHash);
 	console.log(`newAccountId: ${newAccountId}`);
+	return newAccountId;
+}
 
-	//2. Set mapping between ethAddr and godwoken script hash with Eth Addr Registry contract.
-	nonce = await rpc.getNonce(fromId);
+//2. Set mapping between ethAddr and godwoken script hash with Eth Addr Registry contract.
+async function setMapping(rpc, privateKey, ethAddr, nodeInfo) {
+	const rollupTypeHash = nodeInfo.getRollupTyeHash();
+	const ethAccountTypeHash = nodeInfo.getEthAccountTypeHash();
+	const ethAddrRegTypeHash = nodeInfo.getEthAddrRegTypeHash();
+	const chainId = nodeInfo.getChainId();
+	const fromId = await privateKeyToAccountId(rpc, privateKey, ethAccountTypeHash, rollupTypeHash);
+	console.log(`fromId: ${fromId}`);
+	const nonce = await rpc.getNonce(fromId);
 	const ethAddrRegScriptHash = buildEthAddrRegScriptHash(rollupTypeHash, ethAddrRegTypeHash);
+	const newScriptHash = ethAddrToScriptHash(ethAccountTypeHash, rollupTypeHash, ethAddr);
+	console.log(`newScriptHash: ${newScriptHash}`);
 	const ethRegMapArgs = buildEthRegMapArgs(newScriptHash);
 	const ethRegAccountId = await rpc.getAccountIdByScriptHash(ethAddrRegScriptHash);
 	console.log(`ethRegAccountId: ${ethRegAccountId}`);
-	const l2Tx = await buildTx(rpc, privateKey, fromId, ethRegAccountId, nonce, ethRegMapArgs, rollupTypeHash);
-	receipt = await rpc.executeL2Tx(l2Tx);
-	console.log(`l2TxHash1: ${JSON.stringify(receipt, null, 2)}`);
+	const l2Tx = await buildTx(rpc, privateKey, fromId, ethRegAccountId, nonce, ethRegMapArgs, chainId);
+	const l2TxHash = await rpc.submitL2Tx(l2Tx);
+	console.log(`l2txHash: ${l2TxHash}`);
+	const receipt = await waitReceipt(rpc, l2TxHash);
+	console.log(`l2TxHash: ${JSON.stringify(receipt, null, 2)}`);
 }
 
 
@@ -226,10 +306,13 @@ function buildEthAddrRegScriptHash(rollupTypeHash, ethAddrRegTypeHash) {
 
 }
 function buildEthRegMapArgs(accountScriptHash) {
-	const fee = "0x0";
+	const fee = "0x1";
 	const setMapping = {
 		"gw_script_hash": new Reader(accountScriptHash),
-		"fee": normalizeHexNumber(8, fee)
+		"fee": {
+			registry_id: normalizeHexNumber(4, "0x2"),
+			amount: normalizeHexNumber(16, fee)
+		}
 	};
 	const ethRegArgs = {
 		"type": "SetMapping",
@@ -238,17 +321,18 @@ function buildEthRegMapArgs(accountScriptHash) {
 	return new Reader(SerializeETHAddrRegArgs(ethRegArgs)).serializeJson();
 }
 
-async function buildTx(rpc, privateKey, fromId, toId, nonce, args, rollupTypeHash) {
+async function buildTx(rpc, privateKey, fromId, toId, nonce, args, chainId) {
 	const rawL2Tx = {
+		chain_id: chainId,
 		from_id: fromId,
 		to_id: toId,
 		nonce: nonce,
 		args: args
 	};
-	const senderScriptHash = await rpc.getScriptHashByAccountId(fromId);
-	const receiverScriptHash = await rpc.getScriptHashByAccountId(toId);
-	const msg = generateTxMessage(rawL2Tx, rollupTypeHash, senderScriptHash, receiverScriptHash);
-	const signature = signMessage(msg, privateKey);
+	const fromEthAddr = privateKeyToEthAddress(privateKey);
+	const typedL2Tx = await convertToTypedL2Tx(fromEthAddr, rawL2Tx, rpc);
+	const signature = getEIP712DomainSignature(typedL2Tx, privateKey);
+
 	console.log(`signature: ${signature}`);
 	const l2tx1 = {
 		raw: rawL2Tx,
@@ -275,12 +359,29 @@ async function waitReceipt(rpc, txHash) {
 async function main() {
 	let rpc = new GodwokenClient("http://localhost:8024");
 	//This private key is used in kicker.
-	const privateKey = "0x94e1e988e705024cb8e02be5af2d28ce5aa747cad4e1fc33db41e923fbd03365";
-	//The type hash of eth addr reg can be find in godwoken.toml in godwoken-kicker
-	const ethAddrRegTypeHash = "0x29b04130447ac17d0361dd7bf82661fe261ebbf9a30620c10621581e6396f3c4";
+	//We need to deposit some CKB first.
+	const privateKey = process.env.PRIVATE_KEY;
+	console.log("private key:", privateKey);
+	expect(privateKey).to.exist;
 	//The EOA account we are going to create.
-	const ethAddr = "0xD1BBB255403C5dc6F6e44375fCF367131785aef6";
-	await createEoaAccount(rpc, privateKey, ethAddr, ethAddrRegTypeHash);
+	const ethAddress = process.env.ETH_ADDRESS || '0x8fa599f36278e337db301ecf292ff1c5e3cfda84';
+	console.log(`Use meta-contract to create account: ${ethAddress}`);
+
+	const res = await rpc.getNodeInfo();
+	const nodeInfo = new NodeInfo(res);
+	const newAccountId = await createEoaAccount(rpc, privateKey, ethAddress, nodeInfo);
+	expect(newAccountId).to.exist;
+	const scriptHash = await rpc.getScriptHashByAccountId(newAccountId);
+	expect(scriptHash).to.exist;
+	console.log(`Script hash: ${scriptHash}`);
+
+	await setMapping(rpc, privateKey, ethAddress, nodeInfo);
+	const registryAddress = await rpc.getRegistryAddressByScriptHash(scriptHash, '0x2');
+	const actualRegistryAddress = {
+		registry_id: '0x2',
+		address: ethAddress
+	};
+	expect(registryAddress).to.deep.equal(actualRegistryAddress);
 }
 
 main();

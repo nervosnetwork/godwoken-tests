@@ -189,8 +189,8 @@
           "type": "byte"
         },
         {
-          "name": "compatible_chain_id",
-          "type": "Uint32"
+          "name": "chain_id",
+          "type": "Uint64"
         },
         {
           "name": "allowed_eoa_type_hashes",
@@ -206,6 +206,10 @@
       "type": "table",
       "name": "RawL2Transaction",
       "fields": [
+        {
+          "name": "chain_id",
+          "type": "Uint64"
+        },
         {
           "name": "from_id",
           "type": "Uint32"
@@ -284,8 +288,8 @@
           "type": "Uint64"
         },
         {
-          "name": "block_producer_id",
-          "type": "Uint32"
+          "name": "block_producer",
+          "type": "Bytes"
         },
         {
           "name": "parent_block_hash",
@@ -375,6 +379,10 @@
         {
           "name": "script",
           "type": "Script"
+        },
+        {
+          "name": "registry_id",
+          "type": "Uint32"
         }
       ]
     },
@@ -412,12 +420,16 @@
           "type": "Byte32"
         },
         {
+          "name": "registry_id",
+          "type": "Uint32"
+        },
+        {
           "name": "owner_lock_hash",
           "type": "Byte32"
         },
         {
           "name": "fee",
-          "type": "Uint64"
+          "type": "Uint128"
         }
       ]
     },
@@ -460,12 +472,12 @@
       "item": "KVPair"
     },
     {
-      "type": "struct",
+      "type": "table",
       "name": "BlockInfo",
       "fields": [
         {
-          "name": "block_producer_id",
-          "type": "Uint32"
+          "name": "block_producer",
+          "type": "Bytes"
         },
         {
           "name": "number",
@@ -492,6 +504,10 @@
         {
           "name": "cancel_timeout",
           "type": "Uint64"
+        },
+        {
+          "name": "registry_id",
+          "type": "Uint32"
         }
       ]
     },
@@ -590,6 +606,20 @@
       ]
     },
     {
+      "type": "struct",
+      "name": "Fee",
+      "fields": [
+        {
+          "name": "registry_id",
+          "type": "Uint32"
+        },
+        {
+          "name": "amount",
+          "type": "Uint128"
+        }
+      ]
+    },
+    {
       "type": "table",
       "name": "CreateAccount",
       "fields": [
@@ -599,7 +629,7 @@
         },
         {
           "name": "fee",
-          "type": "Uint64"
+          "type": "Fee"
         }
       ]
     },
@@ -616,7 +646,7 @@
       "name": "SUDTQuery",
       "fields": [
         {
-          "name": "short_script_hash",
+          "name": "address",
           "type": "Bytes"
         }
       ]
@@ -626,16 +656,16 @@
       "name": "SUDTTransfer",
       "fields": [
         {
-          "name": "to",
+          "name": "to_address",
           "type": "Bytes"
         },
         {
           "name": "amount",
-          "type": "Uint128"
+          "type": "Uint256"
         },
         {
           "name": "fee",
-          "type": "Uint64"
+          "type": "Fee"
         }
       ]
     },
@@ -834,6 +864,18 @@
         {
           "name": "withdrawal_proof",
           "type": "CKBMerkleProof"
+        },
+        {
+          "name": "kv_state_proof",
+          "type": "Bytes"
+        },
+        {
+          "name": "kv_state",
+          "type": "KVPairVec"
+        },
+        {
+          "name": "account_count",
+          "type": "Uint32"
         }
       ]
     },
@@ -948,7 +990,7 @@
         },
         {
           "name": "fee",
-          "type": "Uint64"
+          "type": "Fee"
         }
       ]
     },
@@ -962,7 +1004,7 @@
         },
         {
           "name": "fee",
-          "type": "Uint64"
+          "type": "Fee"
         }
       ]
     },

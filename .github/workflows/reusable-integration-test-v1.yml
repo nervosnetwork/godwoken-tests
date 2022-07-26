@@ -224,6 +224,18 @@ jobs:
       working-directory: contracts
       run: npm install && npm run test
 
+    - name: Deposit for meta-contract demo
+      working-directory: kicker
+      run: |
+        # Deposit for the test accounts defined in `contracts/hardhat.config.js`.
+        #   1390c30e5d5867ee7246619173b5922d3b04009cab9e9d91e14506231281a997
+        ./kicker deposit 0x966B30e576A4d6731996748B48Dd67C94eF29067 1000
+    - name: meta-contract create EOA test
+      working-directory: testcases/create-eoa-account
+      run: |
+        npm install
+        PRIVATE_KEY=0x1390c30e5d5867ee7246619173b5922d3b04009cab9e9d91e14506231281a997 npm start
+
     # Only enable tmate while debugging
     # - name: Setup tmate session
     #   if: ${{ failure() }}
