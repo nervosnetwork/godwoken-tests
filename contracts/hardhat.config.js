@@ -56,7 +56,11 @@ module.exports = {
       accounts: [`0x${TEST_PK1}`]
     },
     hardhat: {
-      hardfork: "berlin"
+      hardfork: "berlin",
+      mining: {
+        auto: true,
+        interval: 1000
+      }
     }
   },
   mocha: {
